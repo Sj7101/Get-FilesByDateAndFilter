@@ -1,42 +1,50 @@
-﻿function Get-FilesByExactModifiedDate {
+﻿function Get-MatchingFilesByDate {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [string]$Path,
 
-        [Parameter(Mandatory=$true)]
-        [string]$Filter,
+        [Parameter(Mandatory = $true)]
+        [string[]]$FileNames,
 
-        [Parameter(Mandatory=$true)]
-        [datetime]$Date,
-
-        [switch]$Recurse
+        [Parameter(Mandatory = $true)]
+        [datetime]$Date
     )
 
     if (-not (Test-Path $Path)) {
         throw "The path '$Path' does not exist."
     }
 
-    try {
-        $files = Get-ChildItem -Path $Path -Filter $Filter -File -Recurse:$Recurse |
-            Where-Object {
-                $_.LastWriteTime.Date -eq $Date.Date
-            }
+    $matchingFiles = @()
 
-        return $files
+    foreach ($fileName in $FileNames) {
+        $fullPath = Join-Path -Path $Path -ChildPath $fileName
+        if (Test-Path $fullPath) {
+            $file = Get-Item $fullPath
+            if ($file.LastWriteTime.Date -eq $Date.Date) {
+                $matchingFiles += $file
+            }
+        }
     }
-    catch {
-        Write-Error "Error checking files: $_"
-        return $null
-    }
+
+    return $matchingFiles
 }
 
 
 
-<#
-# Check for .txt files modified exactly on April 15, 2025
-$targetDate = Get-Date "2025-04-15"
-$results = Get-FilesByExactModifiedDate -Path "C:\Logs" -Filter "*.txt" -Date $targetDate -Recurse
 
+<#
+# Files you're checking
+$fileList = @("log1.txt", "report.csv", "errors.log")
+
+# The path and date you want to match
+$path = "C:\Logs"
+$dateToMatch = Get-Date "2025-04-15"
+
+# Run the function
+$results = Get-MatchingFilesByDate -Path $path -FileNames $fileList -Date $dateToMatch
+
+# Output result
 $results | Format-Table Name, LastWriteTime, FullName
+
 #>
