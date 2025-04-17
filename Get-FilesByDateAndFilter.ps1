@@ -1,8 +1,11 @@
-﻿function Get-MatchingFilesByDate {
+﻿function Get-RemoteMatchingFilesByDate {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
-        [string]$Path,
+        [string[]]$Servers,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RemotePath,
 
         [Parameter(Mandatory = $true)]
         [string[]]$FileNames,
@@ -11,40 +14,61 @@
         [datetime]$Date
     )
 
-    if (-not (Test-Path $Path)) {
-        throw "The path '$Path' does not exist."
-    }
+    $results = @()
 
-    $matchingFiles = @()
+    foreach ($server in $Servers) {
+        Write-Host "Checking $server..." -ForegroundColor Cyan
 
-    foreach ($fileName in $FileNames) {
-        $fullPath = Join-Path -Path $Path -ChildPath $fileName
-        if (Test-Path $fullPath) {
-            $file = Get-Item $fullPath
-            if ($file.LastWriteTime.Date -eq $Date.Date) {
-                $matchingFiles += $file
-            }
+        try {
+            $serverResult = Invoke-Command -ComputerName $server -ScriptBlock {
+                param ($Path, $Names, $TargetDate)
+                
+                $matched = @()
+                foreach ($name in $Names) {
+                    $filePath = Join-Path -Path $Path -ChildPath $name
+                    if (Test-Path $filePath) {
+                        $file = Get-Item $filePath
+                        if ($file.LastWriteTime.Date -eq $TargetDate.Date) {
+                            $matched += [PSCustomObject]@{
+                                Server        = $env:COMPUTERNAME
+                                Name          = $file.Name
+                                LastWriteTime = $file.LastWriteTime
+                                FullName      = $file.FullName
+                            }
+                        }
+                    }
+                }
+                return $matched
+            } -ArgumentList $RemotePath, $FileNames, $Date -ErrorAction Stop
+
+            $results += $serverResult
+        }
+        catch {
+            Write-Warning "Failed to query $server: $_"
         }
     }
 
-    return $matchingFiles
+    return $results
 }
 
 
 
 
+
 <#
-# Files you're checking
-$fileList = @("log1.txt", "report.csv", "errors.log")
+# Load server names from a file
+$servers = Get-Content -Path "C:\Path\To\servers.txt"
 
-# The path and date you want to match
-$path = "C:\Logs"
-$dateToMatch = Get-Date "2025-04-15"
+# Define shared values
+$fileList = @("log1.txt", "errors.log", "metrics.csv")
+$remotePath = "D:\Logs"
+$targetDate = Get-Date "2025-04-15"
 
-# Run the function
-$results = Get-MatchingFilesByDate -Path $path -FileNames $fileList -Date $dateToMatch
+# Call the function
+$matchedFiles = Get-RemoteMatchingFilesByDate -Servers $servers -RemotePath $remotePath -FileNames $fileList -Date $targetDate
 
-# Output result
-$results | Format-Table Name, LastWriteTime, FullName
+# Output
+$matchedFiles | Format-Table Server, Name, LastWriteTime, FullName
+
 
 #>
